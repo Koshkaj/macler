@@ -1,0 +1,68 @@
+version: "3.8"
+
+services:
+  backend:
+    image: macler_be:latest
+    build:
+      context: ./backend
+    command: "./app"
+    networks:
+      - main
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=PathPrefix(`/`) && Host(`macler.localhost`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  parser:
+    image: macler_parser:latest
+    build:
+      context: ./parser
+    command: "./app"
+    networks:
+      - main
+    restart: unless-stopped
+    env_file:
+      - parser/.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: macler_rabbit
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+    networks:
+      - main
+
+  proxy:
+    image: traefik:v2.9.6
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - main
+
+networks:
+  main:
+    driver: bridge
